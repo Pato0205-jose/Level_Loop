@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Progress" ADD COLUMN     "weeklyXp" INTEGER NOT NULL DEFAULT 0;
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "isDemo" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "isFriend" BOOLEAN NOT NULL DEFAULT false;
