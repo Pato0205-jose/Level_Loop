@@ -154,18 +154,29 @@ const BACKEND_ERROR_ES: Record<string, string> = {
   'Email already in use': 'Ya existe una cuenta con ese email.',
   'Invalid email or password': 'Email o contraseña incorrectos.',
   'Invalid request body': 'Datos inválidos. Revisa el formulario.',
+  'Invalid verification code': 'Ingresa un código de 6 dígitos.',
+  'Invalid or expired verification code': 'Código inválido o expirado.',
   'Missing authorization token': 'Sesión expirada. Inicia sesión de nuevo.',
   'Invalid token': 'Sesión expirada. Inicia sesión de nuevo.',
-  'Invalid or expired verification code': 'Código inválido o expirado.',
   'Invalid or expired reset token': 'Código inválido o expirado.',
   'User not found': 'No encontramos tu cuenta.',
+  'Email verification required. Use /auth/login/request-code first.':
+    'Se requiere verificación por correo.',
+  'Email verification required. Use /auth/register/request-code first.':
+    'Se requiere verificación por correo.',
+  'No se pudo enviar el correo.':
+    'No se pudo enviar el correo. Verifica el email e intenta de nuevo.',
 };
 
 async function parseBackendError(res: Response, fallback: string): Promise<string> {
   try {
     const body = (await res.json()) as { error?: string };
     if (body?.error) {
-      return BACKEND_ERROR_ES[body.error] ?? body.error;
+      const msg = body.error;
+      if (msg.includes('testing emails') || msg.includes('verify a domain')) {
+        return 'En modo prueba solo se pueden enviar correos a la cuenta verificada en Resend.';
+      }
+      return BACKEND_ERROR_ES[msg] ?? msg;
     }
     return fallback;
   } catch {
@@ -222,31 +233,69 @@ async function getOrCreateUserDoc(uid: string, email: string): Promise<PublicUse
   return toPublicFromDoc(uid, bootstrap);
 }
 
-export async function register(input: {
+export async function requestRegisterCode(input: {
   name: string;
   email: string;
   password: string;
-}): Promise<{ user?: PublicUser; error?: string }> {
+}): Promise<{ ok: boolean; error?: string; devCode?: string }> {
   const nameErr = validateName(input.name);
-  if (nameErr) return { error: nameErr };
+  if (nameErr) return { ok: false, error: nameErr };
   const emailErr = validateEmail(input.email);
-  if (emailErr) return { error: emailErr };
+  if (emailErr) return { ok: false, error: emailErr };
   const passErr = validatePassword(input.password);
-  if (passErr) return { error: passErr };
+  if (passErr) return { ok: false, error: passErr };
 
   const email = input.email.trim().toLowerCase();
 
   if (USE_BACKEND_AUTH) {
     try {
-      const res = await backendFetch('/auth/register', {
+      const res = await backendFetch('/auth/register/request-code', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: input.name.trim(),
           email,
           password: input.password,
+        }),
+      });
+
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: await parseBackendError(res, 'No se pudo enviar el código.'),
+        };
+      }
+
+      const body = (await res.json()) as { devCode?: string };
+      return { ok: true, devCode: body.devCode };
+    } catch (err) {
+      return { ok: false, error: formatBackendConnectionError(err) };
+    }
+  }
+
+  return { ok: false, error: 'Registro con código solo disponible con backend.' };
+}
+
+export async function verifyRegisterCode(input: {
+  email: string;
+  code: string;
+}): Promise<{ user?: PublicUser; error?: string }> {
+  const emailErr = validateEmail(input.email);
+  if (emailErr) return { error: emailErr };
+  if (!/^\d{6}$/.test(input.code.trim())) {
+    return { error: 'Ingresa un código de 6 dígitos.' };
+  }
+
+  const email = input.email.trim().toLowerCase();
+
+  if (USE_BACKEND_AUTH) {
+    try {
+      const res = await backendFetch('/auth/register/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          code: input.code.trim(),
         }),
       });
 
@@ -265,57 +314,79 @@ export async function register(input: {
     }
   }
 
-  try {
-    const auth = getFirebaseAuth();
-    const credential = await createUserWithEmailAndPassword(
-      auth,
-      email,
-      input.password,
-    );
-    const uid = credential.user.uid;
-    const createdAt = Date.now();
-    const docData: UserDoc = {
-      email,
-      name: input.name.trim(),
-      bio: '',
-      dailyGoalMin: 10,
-      interests: [],
-      createdAt,
-      updatedAt: createdAt,
-      onboardingDone: false,
-    };
-
-    await setDoc(usersRef(uid), docData);
-    await setItem(StorageKeys.CURRENT_USER_ID, uid);
-    return { user: toPublicFromDoc(uid, docData) };
-  } catch (err) {
-    return {
-      error: mapAuthError(err, 'No se pudo crear la cuenta.'),
-    };
-  }
+  return { error: 'Registro con código solo disponible con backend.' };
 }
 
-export async function login(input: {
+/** @deprecated Usa requestRegisterCode + verifyRegisterCode */
+export async function register(input: {
+  name: string;
   email: string;
   password: string;
 }): Promise<{ user?: PublicUser; error?: string }> {
+  const sent = await requestRegisterCode(input);
+  if (!sent.ok) return { error: sent.error };
+  return { error: 'Revisa tu correo e ingresa el código de verificación.' };
+}
+
+export async function requestLoginCode(input: {
+  email: string;
+  password: string;
+}): Promise<{ ok: boolean; error?: string; devCode?: string }> {
   const emailErr = validateEmail(input.email);
-  if (emailErr) return { error: emailErr };
+  if (emailErr) return { ok: false, error: emailErr };
   const passErr = validatePassword(input.password);
-  if (passErr) return { error: passErr };
+  if (passErr) return { ok: false, error: passErr };
 
   const email = input.email.trim().toLowerCase();
 
   if (USE_BACKEND_AUTH) {
     try {
-      const res = await backendFetch('/auth/login', {
+      const res = await backendFetch('/auth/login/request-code', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email,
           password: input.password,
+        }),
+      });
+
+      if (!res.ok) {
+        return {
+          ok: false,
+          error: await parseBackendError(res, 'No se pudo enviar el código.'),
+        };
+      }
+
+      const body = (await res.json()) as { devCode?: string };
+      return { ok: true, devCode: body.devCode };
+    } catch (err) {
+      return { ok: false, error: formatBackendConnectionError(err) };
+    }
+  }
+
+  return { ok: false, error: 'Inicio de sesión con código solo disponible con backend.' };
+}
+
+export async function verifyLoginCode(input: {
+  email: string;
+  code: string;
+}): Promise<{ user?: PublicUser; error?: string }> {
+  const emailErr = validateEmail(input.email);
+  if (emailErr) return { error: emailErr };
+  if (!/^\d{6}$/.test(input.code.trim())) {
+    return { error: 'Ingresa un código de 6 dígitos.' };
+  }
+
+  const email = input.email.trim().toLowerCase();
+
+  if (USE_BACKEND_AUTH) {
+    try {
+      const res = await backendFetch('/auth/login/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          code: input.code.trim(),
         }),
       });
 
@@ -334,18 +405,17 @@ export async function login(input: {
     }
   }
 
-  try {
-    const auth = getFirebaseAuth();
-    const credential = await signInWithEmailAndPassword(auth, email, input.password);
-    const uid = credential.user.uid;
-    const user = await getOrCreateUserDoc(uid, email);
-    await setItem(StorageKeys.CURRENT_USER_ID, uid);
-    return { user };
-  } catch (err) {
-    return {
-      error: mapAuthError(err, 'No se pudo iniciar sesión.'),
-    };
-  }
+  return { error: 'Inicio de sesión con código solo disponible con backend.' };
+}
+
+/** @deprecated Usa requestLoginCode + verifyLoginCode */
+export async function login(input: {
+  email: string;
+  password: string;
+}): Promise<{ user?: PublicUser; error?: string }> {
+  const sent = await requestLoginCode(input);
+  if (!sent.ok) return { error: sent.error };
+  return { error: 'Revisa tu correo e ingresa el código de verificación.' };
 }
 
 export async function logout(): Promise<void> {

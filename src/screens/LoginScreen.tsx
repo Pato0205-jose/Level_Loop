@@ -24,8 +24,14 @@ import { AuthTextField } from '../components/AuthTextField';
 import { GlassPanel } from '../components/GlassPanel';
 import { colors, spacing } from '../constants/theme';
 import { useBackendReachable } from '../hooks/useBackendReachable';
-import { login, type PublicUser } from '../services/auth';
+import {
+  requestLoginCode,
+  verifyLoginCode,
+  type PublicUser,
+} from '../services/auth';
 import { ensureApiReady } from '../config/backend';
+
+type Step = 'credentials' | 'code';
 
 const GOOGLE_ICON_URI =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuANFQfufVaXhtIKLNDycda5FSAlLbYVLCNNsdhI1nfUlfV1oLeVluZZEpm25kzjK3OvxaTOJlXcfLwB5NervHbTmrRrDGPU8NWpqQ5XJqpL0meXdWkjGyIbypGoaZCPMcCVHawZ_JLjpf97o_9hV1o50pBhIMgtWyL4hc3PuV9akUuJkaBgmSWvRsN7kh5ENIhZNHk9yHcXGXfWlEx5wOD4pKntOYX2PT4EW-6jMydUm0SeOwkPvx8ySeB_Ua3OAPnni-n5AsLQ2Fv1';
@@ -44,19 +50,42 @@ export function LoginScreen({
   onForgotPassword,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const [step, setStep] = useState<Step>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [devCodeHint, setDevCodeHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { status: backendStatus, message: backendMessage, recheck } = useBackendReachable();
 
-  const handleSubmit = async () => {
+  const handleSendCode = async () => {
     if (busy) return;
     setError(null);
     setBusy(true);
     try {
       await ensureApiReady();
-      const result = await login({ email, password });
+      const result = await requestLoginCode({ email, password });
+      if (!result.ok) {
+        setError(result.error ?? 'No se pudo enviar el código.');
+        return;
+      }
+      setDevCodeHint(result.devCode ?? null);
+      setStep('code');
+    } catch {
+      setError('Error inesperado. Intenta de nuevo.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await ensureApiReady();
+      const result = await verifyLoginCode({ email, code });
       if (result.error || !result.user) {
         setError(result.error ?? 'No se pudo iniciar sesión.');
         return;
@@ -69,6 +98,11 @@ export function LoginScreen({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleResendCode = async () => {
+    setCode('');
+    await handleSendCode();
   };
 
   const [fontsLoaded] = useFonts({
@@ -124,9 +158,13 @@ export function LoginScreen({
 
           <GlassPanel intensity={50} tint="dark" style={styles.panel}>
             <View style={styles.panelInner}>
+              {step === 'credentials' && (
+                <>
               <View style={styles.panelHeader}>
                 <Text style={styles.panelTitle}>Bienvenido de nuevo</Text>
-                <Text style={styles.panelSubtitle}>Ingresa tus credenciales de piloto</Text>
+                <Text style={styles.panelSubtitle}>
+                  Ingresa tu correo y contraseña. Te enviaremos un código de acceso.
+                </Text>
               </View>
 
               <View style={styles.form}>
@@ -155,7 +193,7 @@ export function LoginScreen({
                 />
 
                 <AuthTextField
-                  label="Código de Acceso"
+                  label="Contraseña"
                   icon="lock"
                   placeholder="••••••••"
                   value={password}
@@ -183,15 +221,15 @@ export function LoginScreen({
                     pressed && styles.btnPressed,
                     busy && styles.btnDisabled,
                   ]}
-                  onPress={handleSubmit}
+                  onPress={handleSendCode}
                   disabled={busy}
                 >
-                  <Text style={styles.submitText}>
-                    {busy ? 'Conectando...' : 'Iniciar sesión'}
+                  <Text style={styles.submitTextCompact}>
+                    {busy ? 'Enviando...' : 'Enviar código'}
                   </Text>
                   {!busy && (
                     <MaterialIcons
-                      name="bolt"
+                      name="send"
                       size={22}
                       color={colors.onSecondaryFixed}
                     />
@@ -215,6 +253,91 @@ export function LoginScreen({
                   <Text style={styles.socialLabel}>GitHub</Text>
                 </Pressable>
               </View>
+                </>
+              )}
+
+              {step === 'code' && (
+                <>
+              <View style={styles.panelHeader}>
+                <Text style={styles.panelTitle}>Código de acceso</Text>
+                <Text style={styles.panelSubtitle}>
+                  Revisa tu bandeja ({email.trim().toLowerCase()}) e ingresa el código de 6 dígitos.
+                </Text>
+              </View>
+
+              {devCodeHint ? (
+                <View style={styles.devCodeBox}>
+                  <MaterialIcons name="developer-mode" size={18} color={colors.tertiaryBright} />
+                  <Text style={styles.devCodeText}>
+                    Modo desarrollo — código: {devCodeHint}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.form}>
+                <AuthTextField
+                  label="Código de acceso"
+                  icon="vpn-key"
+                  placeholder="123456"
+                  value={code}
+                  onChangeText={(v) => {
+                    setCode(v.replace(/\D/g, '').slice(0, 6));
+                    if (error) setError(null);
+                  }}
+                  keyboardType="number-pad"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                {error && (
+                  <View style={styles.errorBox}>
+                    <MaterialIcons name="error-outline" size={18} color="#ffb4ab" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.submitBtn,
+                    pressed && styles.btnPressed,
+                    busy && styles.btnDisabled,
+                  ]}
+                  onPress={handleVerifyCode}
+                  disabled={busy}
+                >
+                  <Text style={styles.submitText}>
+                    {busy ? 'Verificando...' : 'Iniciar sesión'}
+                  </Text>
+                  {!busy && (
+                    <MaterialIcons
+                      name="bolt"
+                      size={22}
+                      color={colors.onSecondaryFixed}
+                    />
+                  )}
+                </Pressable>
+
+                <Pressable
+                  style={styles.forgotLink}
+                  onPress={() => void handleResendCode()}
+                  disabled={busy}
+                >
+                  <Text style={styles.forgotText}>Reenviar código</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.forgotLink}
+                  onPress={() => {
+                    setStep('credentials');
+                    setCode('');
+                    setError(null);
+                  }}
+                >
+                  <Text style={styles.forgotText}>← Cambiar credenciales</Text>
+                </Pressable>
+              </View>
+                </>
+              )}
             </View>
           </GlassPanel>
 
@@ -308,6 +431,24 @@ const styles = StyleSheet.create({
   form: {
     gap: spacing.md,
   },
+  devCodeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.base,
+    padding: spacing.sm,
+    borderRadius: 10,
+    backgroundColor: 'rgba(155, 208, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(155, 208, 255, 0.35)',
+    marginBottom: spacing.sm,
+  },
+  devCodeText: {
+    flex: 1,
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 13,
+    color: colors.tertiaryBright,
+    lineHeight: 18,
+  },
   forgotLink: {
     alignSelf: 'flex-end',
   },
@@ -334,6 +475,11 @@ const styles = StyleSheet.create({
   submitText: {
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 24,
+    color: colors.onSecondaryFixed,
+  },
+  submitTextCompact: {
+    fontFamily: 'Poppins_600SemiBold',
+    fontSize: 16,
     color: colors.onSecondaryFixed,
   },
   btnPressed: {

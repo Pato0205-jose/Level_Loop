@@ -6,6 +6,11 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { env } from '../lib/env.js';
 import { sendVerificationCodeEmail } from '../lib/email.js';
+import {
+  consumeAuthVerificationCode,
+  issueAuthVerificationCode,
+  type RegisterVerificationPayload,
+} from '../lib/authVerification.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, type AuthedRequest } from '../middleware/auth.js';
 const router = Router();
@@ -56,7 +61,26 @@ const passwordResetConfirmSchema = z.object({
   password: z.string().min(8),
 });
 
+const verifyCodeSchema = z.object({
+  email: z.string().email().transform((value) => value.toLowerCase()),
+  code: z.string().regex(/^\d{6}$/, 'Invalid verification code'),
+});
+
 const CODE_TTL_MS = 15 * 60 * 1000;
+
+function formatAuthRouteError(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Unexpected server error';
+  }
+  const msg = error.message;
+  if (msg.includes('testing emails') || msg.includes('verify a domain')) {
+    return 'No se pudo enviar el correo a esa dirección. Usa un email permitido o verifica tu dominio en Resend.';
+  }
+  if (msg.includes('deleteMany') || msg.includes('authVerificationCode')) {
+    return 'Error interno de verificación. Reinicia el backend e intenta de nuevo.';
+  }
+  return process.env.NODE_ENV !== 'production' ? msg : 'Unexpected server error';
+}
 
 function signToken(userId: string) {
   return jwt.sign({ sub: userId }, env.JWT_SECRET, { expiresIn: '30d' });
@@ -70,61 +94,181 @@ function hashVerificationCode(code: string, userId: string): string {
   return createHash('sha256').update(`${code}:${userId}:${env.JWT_SECRET}`).digest('hex');
 }
 
-router.post('/register', async (req, res) => {
-  const parsed = registerSchema.safeParse(req.body);
+router.post('/register/request-code', async (req, res) => {
+  try {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
+    }
 
-  if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
-  }
+    const { email, password, name } = parsed.data;
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already in use' });
+    }
 
-  const { email, password, name } = parsed.data;
-  const existingUser = await prisma.user.findUnique({ where: { email } });
-
-  if (existingUser) {
-    return res.status(409).json({ error: 'Email already in use' });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12);
-  const createdUser = await prisma.user.create({
-    data: {
-      email,
+    const passwordHash = await bcrypt.hash(password, 12);
+    const payload: RegisterVerificationPayload = {
       passwordHash,
-      name: name ?? null,
-      progress: {
-        create: {},
-      },
-    },
-    select: publicUserSelect,
-  });
+      name: name?.trim() || email.split('@')[0] || 'Cadete',
+    };
 
-  return res.status(201).json({ user: createdUser, token: signToken(createdUser.id) });
+    const delivery = await issueAuthVerificationCode({
+      email,
+      purpose: 'register',
+      payload,
+    });
+
+    return res.json({
+      ok: true,
+      message: delivery.emailSent
+        ? 'Verification code sent to your email.'
+        : 'Verification code generated. Check backend console or dev hint in the app.',
+      ...(delivery.devCode ? { devCode: delivery.devCode } : {}),
+    });
+  } catch (error) {
+    console.error('[register/request-code]', error);
+    return res.status(500).json({ error: formatAuthRouteError(error) });
+  }
 });
 
-router.post('/login', async (req, res) => {
-  const parsed = loginSchema.safeParse(req.body);
+router.post('/register/verify-code', async (req, res) => {
+  try {
+    const parsed = verifyCodeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
+    }
 
-  if (!parsed.success) {
-    return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
+    const { email, code } = parsed.data;
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already in use' });
+    }
+
+    const row = await consumeAuthVerificationCode({
+      email,
+      purpose: 'register',
+      code,
+    });
+
+    if (!row?.payload) {
+      return res.status(400).json({ error: 'Invalid or expired verification code' });
+    }
+
+    const payload = row.payload as RegisterVerificationPayload;
+    const createdUser = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: payload.passwordHash,
+        name: payload.name,
+        progress: { create: {} },
+      },
+      select: publicUserSelect,
+    });
+
+    return res.status(201).json({
+      user: createdUser,
+      token: signToken(createdUser.id),
+    });
+  } catch (error) {
+    console.error('[register/verify-code]', error);
+    const message =
+      process.env.NODE_ENV !== 'production' && error instanceof Error
+        ? error.message
+        : 'Unexpected server error';
+    return res.status(500).json({ error: message });
   }
+});
 
-  const { email, password } = parsed.data;
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: authUserSelect,
+router.post('/login/request-code', async (req, res) => {
+  try {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
+    }
+
+    const { email, password } = parsed.data;
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: authUserSelect,
+    });
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+    if (!passwordMatches) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const delivery = await issueAuthVerificationCode({
+      email,
+      purpose: 'login',
+    });
+
+    return res.json({
+      ok: true,
+      message: delivery.emailSent
+        ? 'Verification code sent to your email.'
+        : 'Verification code generated. Check backend console or dev hint in the app.',
+      ...(delivery.devCode ? { devCode: delivery.devCode } : {}),
+    });
+  } catch (error) {
+    console.error('[login/request-code]', error);
+    return res.status(500).json({ error: formatAuthRouteError(error) });
+  }
+});
+
+router.post('/login/verify-code', async (req, res) => {
+  try {
+    const parsed = verifyCodeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
+    }
+
+    const { email, code } = parsed.data;
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: authUserSelect,
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired verification code' });
+    }
+
+    const row = await consumeAuthVerificationCode({
+      email,
+      purpose: 'login',
+      code,
+    });
+
+    if (!row) {
+      return res.status(400).json({ error: 'Invalid or expired verification code' });
+    }
+
+    const { passwordHash: _passwordHash, ...publicUser } = user;
+    return res.json({ user: publicUser, token: signToken(user.id) });
+  } catch (error) {
+    console.error('[login/verify-code]', error);
+    const message =
+      process.env.NODE_ENV !== 'production' && error instanceof Error
+        ? error.message
+        : 'Unexpected server error';
+    return res.status(500).json({ error: message });
+  }
+});
+
+router.post('/register', async (_req, res) => {
+  return res.status(400).json({
+    error: 'Email verification required. Use /auth/register/request-code first.',
   });
+});
 
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
-
-  const passwordMatches = await bcrypt.compare(password, user.passwordHash);
-
-  if (!passwordMatches) {
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
-
-  const { passwordHash: _passwordHash, ...publicUser } = user;
-  return res.json({ user: publicUser, token: signToken(user.id) });
+router.post('/login', async (_req, res) => {
+  return res.status(400).json({
+    error: 'Email verification required. Use /auth/login/request-code first.',
+  });
 });
 
 router.post('/password-reset', async (req, res) => {
@@ -152,17 +296,24 @@ router.post('/password-reset', async (req, res) => {
         },
       });
 
-      await sendVerificationCodeEmail({
+      const emailResult = await sendVerificationCodeEmail({
         to: email,
         code,
         purpose: 'password-reset',
+      });
+
+      return res.json({
+        ok: true,
+        message: 'If the account exists, a verification code was sent.',
+        ...(emailResult.devLogged && env.EMAIL_EXPOSE_DEV_CODE ? { devCode: code } : {}),
       });
     }
 
     return res.json({
       ok: true,
       message: 'If the account exists, a verification code was sent.',
-    });  } catch (error) {
+    });
+  } catch (error) {
     console.error('[password-reset]', error);
     const message =
       process.env.NODE_ENV !== 'production' && error instanceof Error
