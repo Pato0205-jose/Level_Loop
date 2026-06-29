@@ -259,10 +259,42 @@ router.post('/login/verify-code', async (req, res) => {
   }
 });
 
-router.post('/register', async (_req, res) => {
-  return res.status(400).json({
-    error: 'Email verification required. Use /auth/register/request-code first.',
-  });
+router.post('/register', async (req, res) => {
+  try {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid request body', issues: parsed.error.flatten() });
+    }
+
+    const { email, password, name } = parsed.data;
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already in use' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const createdUser = await prisma.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: name?.trim() || email.split('@')[0] || 'Cadete',
+        progress: { create: {} },
+      },
+      select: publicUserSelect,
+    });
+
+    return res.status(201).json({
+      user: createdUser,
+      token: signToken(createdUser.id),
+    });
+  } catch (error) {
+    console.error('[register]', error);
+    const message =
+      process.env.NODE_ENV !== 'production' && error instanceof Error
+        ? error.message
+        : 'Unexpected server error';
+    return res.status(500).json({ error: message });
+  }
 });
 
 router.post('/login', async (_req, res) => {

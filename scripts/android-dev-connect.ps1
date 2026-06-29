@@ -9,6 +9,24 @@ if (-not $sdk) {
 $adb = Join-Path $sdk "platform-tools\adb.exe"
 
 if (Test-Path $adb) {
+  $devices = & $adb devices 2>&1 | Out-String
+  if ($devices -match 'offline') {
+    Write-Host "AVISO: dispositivo offline. Reiniciando adb..."
+    & $adb kill-server | Out-Null
+    Start-Sleep -Seconds 2
+    & $adb start-server | Out-Null
+    Start-Sleep -Seconds 2
+    $devices = & $adb devices 2>&1 | Out-String
+  }
+
+  if ($devices -notmatch '\tdevice') {
+    Write-Host "AVISO: no hay dispositivo listo. En el celular:"
+    Write-Host "  - Desbloquea la pantalla"
+    Write-Host "  - Acepta 'Permitir depuracion USB'"
+    Write-Host "  - Cambia el cable o el puerto USB si sigue offline"
+    Write-Host "  - Luego ejecuta: adb kill-server && adb start-server"
+  }
+
   & $adb reverse tcp:3000 tcp:3000
   if ($LASTEXITCODE -eq 0) {
     Write-Host "OK: adb reverse tcp:3000 tcp:3000"

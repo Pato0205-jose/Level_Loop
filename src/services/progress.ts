@@ -80,6 +80,19 @@ function diffInDays(a: string, b: string): number {
   return Math.round((db - da) / (24 * 60 * 60 * 1000));
 }
 
+/** Si pasaron 2+ días sin jugar, la racha visible vuelve a 0 hasta el próximo ejercicio. */
+export function normalizeProgressForToday(progress: UserProgress): UserProgress {
+  if (!progress.lastActiveDate) return progress;
+  const today = todayKey();
+  if (progress.lastActiveDate === today) return progress;
+
+  const days = diffInDays(progress.lastActiveDate, today);
+  if (days <= 1) return progress;
+  if (progress.streakDays === 0) return progress;
+
+  return { ...progress, streakDays: 0 };
+}
+
 export type LevelInfo = {
   level: number;
   intoLevelXp: number;
@@ -108,18 +121,18 @@ export async function getProgress(userId: string): Promise<UserProgress> {
       const res = await apiFetch('/progress/me');
       if (res.ok) {
         const payload = (await res.json()) as { progress: UserProgress };
-        const progress = {
+        const progress = normalizeProgressForToday({
           ...EMPTY_PROGRESS,
           ...payload.progress,
           topics: { ...payload.progress.topics },
-        };
+        });
         await setItem(progressKey(userId), progress);
         return progress;
       }
     } catch {
       // Fallback local si no hay red.
     }
-    return getLocalProgress(userId);
+    return normalizeProgressForToday(await getLocalProgress(userId));
   }
 
   try {
@@ -128,9 +141,13 @@ export async function getProgress(userId: string): Promise<UserProgress> {
       return { ...EMPTY_PROGRESS, topics: {} };
     }
     const data = snap.data() as UserProgress;
-    return { ...EMPTY_PROGRESS, ...data, topics: { ...data.topics } };
+    return normalizeProgressForToday({
+      ...EMPTY_PROGRESS,
+      ...data,
+      topics: { ...data.topics },
+    });
   } catch {
-    return getLocalProgress(userId);
+    return normalizeProgressForToday(await getLocalProgress(userId));
   }
 }
 
@@ -138,23 +155,28 @@ export async function saveProgress(
   userId: string,
   progress: UserProgress,
 ): Promise<void> {
+  const normalized = normalizeProgressForToday(progress);
+
   if (USE_BACKEND) {
     try {
       await apiFetch('/progress/me', {
         method: 'PUT',
-        body: JSON.stringify({ progress }),
+        body: JSON.stringify({ progress: normalized }),
       });
     } catch {
       // Si no hay backend o red, guardamos local como respaldo.
     }
+  } else {
+    try {
+      await setDoc(doc(getFirestoreDb(), 'progress', userId), normalized, {
+        merge: true,
+      });
+    } catch {
+      // Fallback local si Firebase no está configurado.
+    }
   }
 
-  try {
-    await setDoc(doc(getFirestoreDb(), 'progress', userId), progress, { merge: true });
-  } catch {
-    // Si no hay backend o red, guardamos local como respaldo.
-  }
-  await setItem(progressKey(userId), progress);
+  await setItem(progressKey(userId), normalized);
 }
 
 export async function recordExerciseResult(
@@ -173,11 +195,11 @@ export async function recordExerciseResult(
           progress: UserProgress;
           delta: CompletionDelta;
         };
-        const progress = {
+        const progress = normalizeProgressForToday({
           ...EMPTY_PROGRESS,
           ...payload.progress,
           topics: { ...payload.progress.topics },
-        };
+        });
         await setItem(progressKey(userId), progress);
         return { progress, delta: payload.delta };
       }
@@ -186,7 +208,7 @@ export async function recordExerciseResult(
     }
   }
 
-  const prev = await getProgress(userId);
+  const prev = normalizeProgressForToday(await getProgress(userId));
   const xp = computeXp(result);
   const score = computeAccuracy(result);
   const passed = score >= PASS_SCORE;

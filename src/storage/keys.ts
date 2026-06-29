@@ -20,6 +20,10 @@ export function achievementsKey(userId: string): string {
   return `${StorageKeys.ACHIEVEMENTS_PREFIX}${userId}`;
 }
 
+export function streakGreetedKey(userId: string): string {
+  return `${StorageKeys.STREAK_GREETED_DATE}:${userId}`;
+}
+
 export function progressKey(userId: string): string {
   return `${StorageKeys.PROGRESS_PREFIX}${userId}`;
 }

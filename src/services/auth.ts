@@ -317,15 +317,48 @@ export async function verifyRegisterCode(input: {
   return { error: 'Registro con código solo disponible con backend.' };
 }
 
-/** @deprecated Usa requestRegisterCode + verifyRegisterCode */
 export async function register(input: {
   name: string;
   email: string;
   password: string;
 }): Promise<{ user?: PublicUser; error?: string }> {
-  const sent = await requestRegisterCode(input);
-  if (!sent.ok) return { error: sent.error };
-  return { error: 'Revisa tu correo e ingresa el código de verificación.' };
+  const nameErr = validateName(input.name);
+  if (nameErr) return { error: nameErr };
+  const emailErr = validateEmail(input.email);
+  if (emailErr) return { error: emailErr };
+  const passErr = validatePassword(input.password);
+  if (passErr) return { error: passErr };
+
+  const email = input.email.trim().toLowerCase();
+
+  if (USE_BACKEND_AUTH) {
+    try {
+      const res = await backendFetch('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: input.name.trim(),
+          email,
+          password: input.password,
+        }),
+      });
+
+      if (!res.ok) {
+        return {
+          error: await parseBackendError(res, 'No se pudo crear la cuenta.'),
+        };
+      }
+
+      const payload = (await res.json()) as { user: BackendUser; token: string };
+      const user = toPublicFromBackend(payload.user);
+      await setAuthSession(user.id, payload.token);
+      return { user };
+    } catch (err) {
+      return { error: formatBackendConnectionError(err) };
+    }
+  }
+
+  return { error: 'Registro solo disponible con backend.' };
 }
 
 export async function requestLoginCode(input: {

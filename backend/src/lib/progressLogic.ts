@@ -62,6 +62,43 @@ function diffInDays(a: string, b: string): number {
   return Math.round((db - da) / (24 * 60 * 60 * 1000));
 }
 
+/** Lunes como inicio de semana (clave estable para ranking semanal). */
+export function weekKeyFromDate(d: Date = new Date()): string {
+  const date = new Date(d);
+  date.setHours(12, 0, 0, 0);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  const year = date.getFullYear();
+  const jan1 = new Date(year, 0, 1);
+  jan1.setHours(12, 0, 0, 0);
+  const week = Math.floor((date.getTime() - jan1.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+export function weekKeyForDayKey(dayKey: string): string {
+  if (!dayKey) return '';
+  return weekKeyFromDate(new Date(`${dayKey}T12:00:00`));
+}
+
+export function shouldResetWeeklyXp(lastActiveDate: string): boolean {
+  if (!lastActiveDate) return false;
+  return weekKeyForDayKey(lastActiveDate) !== weekKeyFromDate(new Date());
+}
+
+/** Si pasaron 2+ días sin jugar, la racha visible vuelve a 0 hasta el próximo ejercicio. */
+export function normalizeProgressForToday(progress: UserProgress): UserProgress {
+  if (!progress.lastActiveDate) return progress;
+  const today = todayKey();
+  if (progress.lastActiveDate === today) return progress;
+
+  const days = diffInDays(progress.lastActiveDate, today);
+  if (days <= 1) return progress;
+  if (progress.streakDays === 0) return progress;
+
+  return { ...progress, streakDays: 0 };
+}
+
 export function getLevel(totalXp: number): number {
   return Math.floor(totalXp / XP_PER_LEVEL) + 1;
 }

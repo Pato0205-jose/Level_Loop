@@ -36,6 +36,7 @@
     "lan": "expo start --lan",
     "android": "powershell -ExecutionPolicy Bypass -File scripts/android-dev-connect.ps1; expo run:android",
     "android:connect": "powershell -ExecutionPolicy Bypass -File scripts/android-dev-connect.ps1",
+    "android:fix-adb": "powershell -ExecutionPolicy Bypass -Command \"$adb = Join-Path $env:LOCALAPPDATA 'Android\\Sdk\\platform-tools\\adb.exe'; & $adb kill-server; Start-Sleep -Seconds 2; & $adb start-server; & $adb devices\"",
     "ios": "expo run:ios",
     "web": "expo start --web --port 8082",
     "android:apk": "expo run:android --variant release",

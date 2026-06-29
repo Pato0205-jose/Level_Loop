@@ -1,17 +1,16 @@
-import { StorageKeys } from '../storage/keys';
+import { streakGreetedKey } from '../storage/keys';
 import { getItem, setItem } from '../storage/storage';
 import { todayKey } from './progress';
 
 /**
- * Devuelve true si todavía no se ha mostrado el saludo de racha hoy.
- * No marca como visto: para eso usa `markStreakGreetedToday`.
+ * Devuelve true si todavía no se ha mostrado el saludo de racha hoy para este usuario.
  */
-export async function shouldShowStreakGreeting(): Promise<boolean> {
-  const stored = await getItem<string>(StorageKeys.STREAK_GREETED_DATE);
+export async function shouldShowStreakGreeting(userId: string): Promise<boolean> {
+  const stored = await getItem<string>(streakGreetedKey(userId));
   return stored !== todayKey();
 }
 
-/** Marca como visto hoy el saludo de racha. */
-export async function markStreakGreetedToday(): Promise<void> {
-  await setItem(StorageKeys.STREAK_GREETED_DATE, todayKey());
+/** Marca como visto hoy el saludo de racha del usuario. */
+export async function markStreakGreetedToday(userId: string): Promise<void> {
+  await setItem(streakGreetedKey(userId), todayKey());
 }

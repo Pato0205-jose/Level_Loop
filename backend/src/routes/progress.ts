@@ -4,6 +4,8 @@ import { requireAuth, type AuthedRequest } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import {
   recordExerciseResult,
+  normalizeProgressForToday,
+  shouldResetWeeklyXp,
   type UserProgress,
 } from '../lib/progressLogic.js';
 
@@ -60,7 +62,24 @@ function toProgressPayload(row: {
 async function loadUserProgress(userId: string): Promise<UserProgress> {
   const row = await prisma.progress.findUnique({ where: { userId } });
   if (!row) return { ...EMPTY_PROGRESS, topics: {} };
-  return toProgressPayload(row) as UserProgress;
+
+  let progress = normalizeProgressForToday(toProgressPayload(row) as UserProgress);
+  const weeklyXp = shouldResetWeeklyXp(progress.lastActiveDate) ? 0 : row.weeklyXp;
+
+  const streakChanged = progress.streakDays !== row.streakDays;
+  const weeklyChanged = weeklyXp !== row.weeklyXp;
+
+  if (streakChanged || weeklyChanged) {
+    await prisma.progress.update({
+      where: { userId },
+      data: {
+        ...(streakChanged ? { streakDays: progress.streakDays } : {}),
+        ...(weeklyChanged ? { weeklyXp } : {}),
+      },
+    });
+  }
+
+  return progress;
 }
 
 router.get('/me', requireAuth, async (req, res) => {
@@ -116,6 +135,10 @@ router.post('/exercise-result', requireAuth, async (req, res) => {
   const existingRow = await prisma.progress.findUnique({ where: { userId } });
   const { progress, delta, weeklyXpGain } = recordExerciseResult(prev, parsed.data);
 
+  const weeklyBase = shouldResetWeeklyXp(prev.lastActiveDate)
+    ? 0
+    : (existingRow?.weeklyXp ?? 0);
+
   const row = await prisma.progress.upsert({
     where: { userId },
     create: {
@@ -129,7 +152,7 @@ router.post('/exercise-result', requireAuth, async (req, res) => {
     },
     update: {
       totalXp: progress.totalXp,
-      weeklyXp: (existingRow?.weeklyXp ?? 0) + weeklyXpGain,
+      weeklyXp: weeklyBase + weeklyXpGain,
       streakDays: progress.streakDays,
       longestStreak: progress.longestStreak,
       lastActiveDate: progress.lastActiveDate || null,

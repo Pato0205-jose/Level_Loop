@@ -24,14 +24,8 @@ import { AuthTextField } from '../components/AuthTextField';
 import { GlassPanel } from '../components/GlassPanel';
 import { colors, spacing } from '../constants/theme';
 import { useBackendReachable } from '../hooks/useBackendReachable';
-import {
-  requestRegisterCode,
-  verifyRegisterCode,
-  type PublicUser,
-} from '../services/auth';
+import { register, type PublicUser } from '../services/auth';
 import { ensureApiReady } from '../config/backend';
-
-type Step = 'form' | 'code';
 
 type Props = {
   onSignIn?: () => void;
@@ -41,47 +35,24 @@ type Props = {
 
 export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState<Step>('form');
   const [pilotName, setPilotName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [devCodeHint, setDevCodeHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { status: backendStatus, message: backendMessage, recheck } = useBackendReachable();
 
-  const handleSendCode = async () => {
+  const handleRegister = async () => {
     if (busy) return;
     setError(null);
     setBusy(true);
     try {
       await ensureApiReady();
-      const result = await requestRegisterCode({
+      const result = await register({
         name: pilotName,
         email,
         password,
       });
-      if (!result.ok) {
-        setError(result.error ?? 'No se pudo enviar el código.');
-        return;
-      }
-      setDevCodeHint(result.devCode ?? null);
-      setStep('code');
-    } catch {
-      setError('Error inesperado. Intenta de nuevo.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleVerifyCode = async () => {
-    if (busy) return;
-    setError(null);
-    setBusy(true);
-    try {
-      await ensureApiReady();
-      const result = await verifyRegisterCode({ email, code });
       if (result.error || !result.user) {
         setError(result.error ?? 'No se pudo crear la cuenta.');
         return;
@@ -94,11 +65,6 @@ export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
     } finally {
       setBusy(false);
     }
-  };
-
-  const handleResendCode = async () => {
-    setCode('');
-    await handleSendCode();
   };
 
   const [fontsLoaded] = useFonts({
@@ -153,14 +119,8 @@ export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
               style={styles.logo}
               contentFit="cover"
             />
-            <Text style={styles.title}>
-              {step === 'form' ? 'Crea tu cuenta' : 'Código de acceso'}
-            </Text>
-            <Text style={styles.subtitle}>
-              {step === 'form'
-                ? 'Completa tus datos para continuar'
-                : 'Ingresa el código de acceso enviado a tu correo'}
-            </Text>
+            <Text style={styles.title}>Crea tu cuenta</Text>
+            <Text style={styles.subtitle}>Únete a la misión de aprendizaje</Text>
           </View>
 
           <GlassPanel
@@ -171,7 +131,6 @@ export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
           >
             <View style={styles.panelAccent} />
             <View style={styles.panelInner}>
-              {step === 'form' && (
               <View style={styles.form}>
                 {backendStatus === 'fail' && backendMessage ? (
                   <View style={styles.errorBox}>
@@ -235,74 +194,7 @@ export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
                     pressed && styles.btnPressed,
                     busy && styles.btnDisabled,
                   ]}
-                  onPress={handleSendCode}
-                  disabled={busy}
-                >
-                  <LinearGradient
-                    colors={[colors.secondary, colors.secondaryContainer]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.submitBtn}
-                  >
-                    <Text style={styles.submitTextCompact}>
-                      {busy ? 'Enviando...' : 'Enviar código'}
-                    </Text>
-                    {!busy && (
-                      <MaterialIcons
-                        name="send"
-                        size={22}
-                        color={colors.onPrimary}
-                      />
-                    )}
-                  </LinearGradient>
-                </Pressable>
-              </View>
-              )}
-
-              {step === 'code' && (
-              <View style={styles.form}>
-                <Text style={styles.codeHint}>
-                  Revisa tu correo ({email.trim().toLowerCase()}) e ingresa el código de acceso de 6 dígitos.
-                </Text>
-
-                {devCodeHint ? (
-                  <View style={styles.devCodeBox}>
-                    <MaterialIcons name="developer-mode" size={18} color={colors.tertiaryBright} />
-                    <Text style={styles.devCodeText}>
-                      Modo desarrollo — código: {devCodeHint}
-                    </Text>
-                  </View>
-                ) : null}
-
-                <AuthTextField
-                  variant="register"
-                  label="Código de acceso"
-                  icon="vpn-key"
-                  placeholder="123456"
-                  value={code}
-                  onChangeText={(v) => {
-                    setCode(v.replace(/\D/g, '').slice(0, 6));
-                    if (error) setError(null);
-                  }}
-                  keyboardType="number-pad"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-
-                {error && (
-                  <View style={styles.errorBox}>
-                    <MaterialIcons name="error-outline" size={18} color="#ffb4ab" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                )}
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.submitWrap,
-                    pressed && styles.btnPressed,
-                    busy && styles.btnDisabled,
-                  ]}
-                  onPress={handleVerifyCode}
+                  onPress={handleRegister}
                   disabled={busy}
                 >
                   <LinearGradient
@@ -312,7 +204,7 @@ export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
                     style={styles.submitBtn}
                   >
                     <Text style={styles.submitText}>
-                      {busy ? 'Verificando...' : 'Crear cuenta'}
+                      {busy ? 'Creando cuenta...' : 'Crear cuenta'}
                     </Text>
                     {!busy && (
                       <MaterialIcons
@@ -323,30 +215,14 @@ export function RegisterScreen({ onSignIn, onBack, onSubmit }: Props) {
                     )}
                   </LinearGradient>
                 </Pressable>
-
-                <Pressable onPress={() => void handleResendCode()} disabled={busy}>
-                  <Text style={styles.footerLink}>Reenviar código</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    setStep('form');
-                    setCode('');
-                    setError(null);
-                  }}
-                >
-                  <Text style={styles.footerLink}>← Volver al formulario</Text>
-                </Pressable>
               </View>
-              )}
 
-              {step === 'form' && (
               <Text style={styles.footer}>
                 ¿Ya tienes una cuenta?{' '}
                 <Text style={styles.footerLink} onPress={onSignIn}>
                   Iniciar sesión
                 </Text>
               </Text>
-              )}
             </View>
           </GlassPanel>
 
@@ -469,30 +345,6 @@ const styles = StyleSheet.create({
   form: {
     gap: spacing.md,
   },
-  codeHint: {
-    fontFamily: 'Poppins_400Regular',
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.onSurfaceVariant,
-    textAlign: 'center',
-  },
-  devCodeBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.base,
-    padding: spacing.sm,
-    borderRadius: 10,
-    backgroundColor: 'rgba(155, 208, 255, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(155, 208, 255, 0.35)',
-  },
-  devCodeText: {
-    flex: 1,
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 13,
-    color: colors.tertiaryBright,
-    lineHeight: 18,
-  },
   submitWrap: {
     marginTop: spacing.sm,
     borderRadius: 8,
@@ -514,11 +366,6 @@ const styles = StyleSheet.create({
   submitText: {
     fontFamily: 'Poppins_600SemiBold',
     fontSize: 24,
-    color: '#ffffff',
-  },
-  submitTextCompact: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 16,
     color: '#ffffff',
   },
   btnPressed: {

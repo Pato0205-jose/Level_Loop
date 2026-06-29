@@ -134,12 +134,12 @@ function AppInner() {
   }, []);
 
   const maybeShowStreakGreeting = useCallback(
-    async (currentProgress: UserProgress | null) => {
+    async (userId: string, currentProgress: UserProgress | null) => {
       if (!currentProgress) return;
-      const due = await shouldShowStreakGreeting();
+      const due = await shouldShowStreakGreeting(userId);
       if (!due) return;
       setStreakGreeting(currentProgress.streakDays);
-      await markStreakGreetedToday();
+      await markStreakGreetedToday(userId);
       feedback('streak');
     },
     [],
@@ -151,7 +151,7 @@ function AppInner() {
       if (onboarded) {
         setMainTab('missions');
         setScreen('main');
-        void maybeShowStreakGreeting(progress);
+        void maybeShowStreakGreeting(currentUser.id, progress);
         void initStreakReminders();
       } else {
         setScreen('onboarding');
@@ -200,7 +200,7 @@ function AppInner() {
       );
       void getProgress(user.id).then((p) => {
         setProgress(p);
-        void maybeShowStreakGreeting(p);
+        void maybeShowStreakGreeting(user.id, p);
       });
     },
     [enterApp, maybeShowStreakGreeting],
@@ -224,8 +224,9 @@ function AppInner() {
       setCurrentUser(user);
       enterApp();
       void initStreakReminders();
+      void hydrateProgressFor(user.id);
     },
-    [enterApp],
+    [enterApp, hydrateProgressFor],
   );
 
   const handleLogout = useCallback(async () => {

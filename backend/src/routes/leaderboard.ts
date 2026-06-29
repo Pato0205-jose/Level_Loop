@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { optionalAuth, type MaybeAuthedRequest } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
+import { shouldResetWeeklyXp } from '../lib/progressLogic.js';
 
 const router = Router();
 
@@ -55,6 +56,7 @@ router.get('/', optionalAuth, async (req, res) => {
         select: {
           totalXp: true,
           weeklyXp: true,
+          lastActiveDate: true,
         },
       },
     },
@@ -62,8 +64,13 @@ router.get('/', optionalAuth, async (req, res) => {
 
   const rows = users.map((user) => {
     const totalXp = user.progress?.totalXp ?? 0;
+    const lastActiveDate = user.progress?.lastActiveDate ?? '';
     const storedWeekly = user.progress?.weeklyXp ?? 0;
-    const weeklyXp = storedWeekly > 0 ? storedWeekly : estimateWeeklyXp(totalXp);
+    const weeklyXp = shouldResetWeeklyXp(lastActiveDate)
+      ? 0
+      : storedWeekly > 0
+        ? storedWeekly
+        : estimateWeeklyXp(totalXp);
 
     return {
       id: user.id,
