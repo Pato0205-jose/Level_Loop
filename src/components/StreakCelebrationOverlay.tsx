@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   Easing,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -162,9 +163,17 @@ export function StreakCelebrationOverlay({ streak, onClose, mode = 'celebration'
 
   if (!fontsLoaded) {
     return (
-      <View style={styles.overlay}>
-        <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={StyleSheet.absoluteFill} />
-      </View>
+      <Modal
+        visible
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={StyleSheet.absoluteFill} />
+        </View>
+      </Modal>
     );
   }
 
@@ -174,7 +183,14 @@ export function StreakCelebrationOverlay({ streak, onClose, mode = 'celebration'
   });
 
   return (
-    <View style={styles.overlay}>
+    <Modal
+      visible
+      animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
       <LinearGradient
         colors={[BG_TOP, BG_BOTTOM]}
         style={StyleSheet.absoluteFill}
@@ -263,6 +279,7 @@ export function StreakCelebrationOverlay({ streak, onClose, mode = 'celebration'
         </Animated.View>
       </View>
     </View>
+    </Modal>
   );
 }
 
@@ -431,8 +448,7 @@ const SPARKS = [
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 999,
+    flex: 1,
     backgroundColor: BG_BOTTOM,
   },
   sparksLayer: {

@@ -47,7 +47,8 @@
           "color": "#cfbdff",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "expo-image"
     ]
   }
 }

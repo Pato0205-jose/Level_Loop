@@ -10,8 +10,8 @@ $adb = Join-Path $sdk "platform-tools\adb.exe"
 
 if (Test-Path $adb) {
   $devices = & $adb devices 2>&1 | Out-String
-  if ($devices -match 'offline') {
-    Write-Host "AVISO: dispositivo offline. Reiniciando adb..."
+  if ($devices -match 'offline' -or $devices -notmatch '\tdevice') {
+    Write-Host "AVISO: dispositivo no listo. Reiniciando adb..."
     & $adb kill-server | Out-Null
     Start-Sleep -Seconds 2
     & $adb start-server | Out-Null
@@ -59,4 +59,4 @@ try {
 
 Write-Host ""
 Write-Host "Siguiente: cd backend && npm run dev"
-Write-Host "Luego:     npx expo run:android  (o pulsa r en Metro)"
+Write-Host "Luego:     npm run android  (recomendado; repara adb antes de compilar)"

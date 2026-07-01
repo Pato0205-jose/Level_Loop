@@ -84,19 +84,41 @@ export async function resolveWorkingApiBaseUrl(force = false): Promise<string> {
   }
 
   resolveInFlight = (async () => {
-    for (const base of getCandidateUrls()) {
-      if (await probeHealth(base, 4500)) {
-        activeBaseUrl = base;
+    const candidates = getCandidateUrls();
+    const attempts = Platform.OS === 'android' && isDev ? 2 : 1;
+
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 1500));
         if (isDev) {
-          console.log(`[backend] conectado → ${base}`);
+          console.log('[backend] reintentando conexión…');
         }
-        return base;
+      }
+
+      for (const base of candidates) {
+        if (await probeHealth(base, 6000)) {
+          activeBaseUrl = base;
+          if (isDev) {
+            console.log(`[backend] conectado → ${base}`);
+          }
+          return base;
+        }
+        if (isDev) {
+          console.log(`[backend] sin respuesta en ${base}`);
+        }
       }
     }
 
     activeBaseUrl = getConfiguredBaseUrl();
     if (isDev) {
-      console.warn(`[backend] sin respuesta; fallback → ${activeBaseUrl}`);
+      console.warn(
+        `[backend] sin respuesta en ningún candidato; fallback → ${activeBaseUrl}`,
+      );
+      if (Platform.OS === 'android') {
+        console.warn(
+          '[backend] USB: npm run android:connect  ·  Wi‑Fi: npm run sync-ip  ·  Reinicia Metro y recarga (r)',
+        );
+      }
     }
     return activeBaseUrl;
   })();
@@ -133,9 +155,9 @@ export function formatBackendConnectionError(err: unknown, target?: string): str
     return `El servidor no respondió a tiempo (${url}). ¿Backend encendido?`;
   }
   if (err instanceof TypeError) {
-    return `No se pudo conectar con ${url}. USB: npm run android:connect. Wi‑Fi: misma red + npm run sync-ip.`;
+    return `No se pudo conectar con ${url}. Prueba: npm run android:connect (USB) o npm run sync-ip (Wi‑Fi) y recarga la app.`;
   }
-  return `No se pudo conectar con el backend (${url}).`;
+  return `No se pudo conectar con el backend (${url}). Ejecuta npm run sync-ip si cambiaste de red.`;
 }
 
 export async function checkBackendHealth(

@@ -12,6 +12,7 @@ import { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -128,9 +129,17 @@ export function LevelUpOverlay({ level, onClose }: Props) {
 
   if (!fontsLoaded) {
     return (
-      <View style={styles.overlay}>
-        <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={StyleSheet.absoluteFill} />
-      </View>
+      <Modal
+        visible
+        animationType="fade"
+        statusBarTranslucent
+        navigationBarTranslucent
+        onRequestClose={onClose}
+      >
+        <View style={styles.overlay}>
+          <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={StyleSheet.absoluteFill} />
+        </View>
+      </Modal>
     );
   }
 
@@ -140,7 +149,14 @@ export function LevelUpOverlay({ level, onClose }: Props) {
   });
 
   return (
-    <View style={styles.overlay}>
+    <Modal
+      visible
+      animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.overlay}>
       <LinearGradient
         colors={[BG_TOP, BG_BOTTOM]}
         style={StyleSheet.absoluteFill}
@@ -220,13 +236,13 @@ export function LevelUpOverlay({ level, onClose }: Props) {
         </Animated.View>
       </View>
     </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 999,
+    flex: 1,
     backgroundColor: BG_BOTTOM,
   },
   content: {

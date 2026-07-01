@@ -2124,128 +2124,152 @@ function CompletionView({
   const canGoNext = !dead && nextTopic !== null && !!onNextTopic;
 
   type Overlay = 'levelUp' | 'streak' | null;
-  const [overlay, setOverlay] = useState<Overlay>(() => {
-    if (!delta) return null;
-    if (delta.leveledUp) return 'levelUp';
-    if (delta.streakIncreased) return 'streak';
-    return null;
-  });
+  const [phase, setPhase] = useState<'summary' | 'celebration'>('summary');
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const exitHandledRef = useRef(false);
 
-  useEffect(() => {
-    if (overlay === 'levelUp') feedback('levelUp');
-    if (overlay === 'streak') feedback('streak');
-  }, [overlay]);
+  const startCelebrationOrExit = useCallback(() => {
+    if (exitHandledRef.current) return;
+    exitHandledRef.current = true;
+
+    if (delta?.leveledUp) {
+      setPhase('celebration');
+      setOverlay('levelUp');
+      feedback('levelUp');
+      return;
+    }
+    if (delta?.streakIncreased) {
+      setPhase('celebration');
+      setOverlay('streak');
+      feedback('streak');
+      return;
+    }
+    onGoHome();
+  }, [delta, onGoHome]);
 
   const dismissOverlay = () => {
     if (overlay === 'levelUp' && delta?.streakIncreased) {
       setOverlay('streak');
+      feedback('streak');
     } else {
       setOverlay(null);
+      onGoHome();
     }
   };
+
+  if (phase === 'summary') {
+    return (
+      <View style={styles.root}>
+        <BackgroundDecor />
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.completionScroll,
+            { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View
+            style={[
+              styles.trophyWrap,
+              dead && { backgroundColor: 'rgba(255, 180, 171, 0.15)' },
+            ]}
+          >
+            <MaterialIcons
+              name={dead ? 'sentiment-dissatisfied' : 'emoji-events'}
+              size={72}
+              color={dead ? ERROR_COLOR : colors.primaryAccent}
+            />
+          </View>
+          <Text style={styles.completionTitle}>
+            {dead
+              ? 'Sin vidas'
+              : perfect
+                ? '¡Tema dominado!'
+                : '¡Tema completado!'}
+          </Text>
+          <Text style={styles.completionSubtitle}>{topicTitle}</Text>
+
+          {delta && (
+            <View style={styles.badgeRow}>
+              {delta.topicJustCompleted && (
+                <CompletionBadge
+                  icon="lock-open"
+                  label="Tema desbloqueado"
+                  color={colors.tertiaryBright}
+                />
+              )}
+              {delta.streakIncreased && (
+                <CompletionBadge
+                  icon="local-fire-department"
+                  label={`Racha · ${delta.newStreak} ${delta.newStreak === 1 ? 'día' : 'días'}`}
+                  color="#ffb86b"
+                />
+              )}
+              {delta.leveledUp && (
+                <CompletionBadge
+                  icon="star"
+                  label={`Nivel ${delta.newLevel}`}
+                  color={colors.primaryAccent}
+                />
+              )}
+              {delta.alreadyCompleted && !delta.topicJustCompleted && (
+                <CompletionBadge
+                  icon="replay"
+                  label="Práctica extra"
+                  color={colors.outline}
+                />
+              )}
+            </View>
+          )}
+
+          <View style={styles.statsGrid}>
+            <StatBox
+              icon="check-circle"
+              label="Aciertos"
+              value={`${correct} / ${total}`}
+              color={colors.tertiaryBright}
+            />
+            <StatBox
+              icon="bolt"
+              label="XP ganado"
+              value={`+${xp}`}
+              color={colors.primaryAccent}
+            />
+            <StatBox
+              icon="favorite"
+              label="Precisión"
+              value={`${accuracy}%`}
+              color={ERROR_COLOR}
+            />
+          </View>
+
+          <Text style={styles.completionTapHint}>
+            Pulsa «Volver al inicio» cuando quieras continuar
+          </Text>
+
+          <View style={styles.completionActions}>
+            {canGoNext && nextTopic && (
+              <PrimaryButton
+                label="Siguiente lección"
+                icon="arrow-forward"
+                onPress={() => onNextTopic?.(nextTopic)}
+              />
+            )}
+            <SecondaryButton
+              label="Volver al inicio"
+              icon="home"
+              onPress={startCelebrationOrExit}
+            />
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
       <BackgroundDecor />
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={[
-          styles.completionScroll,
-          { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View
-          style={[
-            styles.trophyWrap,
-            dead && { backgroundColor: 'rgba(255, 180, 171, 0.15)' },
-          ]}
-        >
-          <MaterialIcons
-            name={dead ? 'sentiment-dissatisfied' : 'emoji-events'}
-            size={72}
-            color={dead ? ERROR_COLOR : colors.primaryAccent}
-          />
-        </View>
-        <Text style={styles.completionTitle}>
-          {dead
-            ? 'Sin vidas'
-            : perfect
-              ? '¡Tema dominado!'
-              : '¡Tema completado!'}
-        </Text>
-        <Text style={styles.completionSubtitle}>{topicTitle}</Text>
-
-        {delta && (
-          <View style={styles.badgeRow}>
-            {delta.topicJustCompleted && (
-              <CompletionBadge
-                icon="lock-open"
-                label="Tema desbloqueado"
-                color={colors.tertiaryBright}
-              />
-            )}
-            {delta.streakIncreased && (
-              <CompletionBadge
-                icon="local-fire-department"
-                label={`Racha · ${delta.newStreak} ${delta.newStreak === 1 ? 'día' : 'días'}`}
-                color="#ffb86b"
-              />
-            )}
-            {delta.leveledUp && (
-              <CompletionBadge
-                icon="star"
-                label={`Nivel ${delta.newLevel}`}
-                color={colors.primaryAccent}
-              />
-            )}
-            {delta.alreadyCompleted && !delta.topicJustCompleted && (
-              <CompletionBadge
-                icon="replay"
-                label="Práctica extra"
-                color={colors.outline}
-              />
-            )}
-          </View>
-        )}
-
-        <View style={styles.statsGrid}>
-          <StatBox
-            icon="check-circle"
-            label="Aciertos"
-            value={`${correct} / ${total}`}
-            color={colors.tertiaryBright}
-          />
-          <StatBox
-            icon="bolt"
-            label="XP ganado"
-            value={`+${xp}`}
-            color={colors.primaryAccent}
-          />
-          <StatBox
-            icon="favorite"
-            label="Precisión"
-            value={`${accuracy}%`}
-            color={ERROR_COLOR}
-          />
-        </View>
-
-        <View style={styles.completionActions}>
-          {canGoNext && nextTopic && (
-            <PrimaryButton
-              label="Siguiente lección"
-              icon="arrow-forward"
-              onPress={() => onNextTopic?.(nextTopic)}
-            />
-          )}
-          <SecondaryButton
-            label="Volver al inicio"
-            icon="home"
-            onPress={onGoHome}
-          />
-        </View>
-      </ScrollView>
-
       {overlay === 'levelUp' && delta && (
         <LevelUpOverlay level={delta.newLevel} onClose={dismissOverlay} />
       )}
@@ -2799,6 +2823,14 @@ const styles = StyleSheet.create({
     color: colors.tertiaryBright,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
+  },
+  completionTapHint: {
+    fontFamily: 'Poppins_500Medium',
+    fontSize: 13,
+    color: colors.outline,
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    marginTop: spacing.xs,
   },
   completionScroll: {
     flexGrow: 1,

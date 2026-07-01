@@ -33,9 +33,6 @@ import { ensureApiReady } from '../config/backend';
 
 type Step = 'credentials' | 'code';
 
-const GOOGLE_ICON_URI =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuANFQfufVaXhtIKLNDycda5FSAlLbYVLCNNsdhI1nfUlfV1oLeVluZZEpm25kzjK3OvxaTOJlXcfLwB5NervHbTmrRrDGPU8NWpqQ5XJqpL0meXdWkjGyIbypGoaZCPMcCVHawZ_JLjpf97o_9hV1o50pBhIMgtWyL4hc3PuV9akUuJkaBgmSWvRsN7kh5ENIhZNHk9yHcXGXfWlEx5wOD4pKntOYX2PT4EW-6jMydUm0SeOwkPvx8ySeB_Ua3OAPnni-n5AsLQ2Fv1';
-
 type Props = {
   onRegister?: () => void;
   onBack?: () => void;
@@ -234,23 +231,6 @@ export function LoginScreen({
                       color={colors.onSecondaryFixed}
                     />
                   )}
-                </Pressable>
-              </View>
-
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>O</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              <View style={styles.socialRow}>
-                <Pressable style={({ pressed }) => [styles.socialBtn, pressed && styles.socialPressed]}>
-                  <Image source={{ uri: GOOGLE_ICON_URI }} style={styles.socialIcon} contentFit="contain" />
-                  <Text style={styles.socialLabel}>Portal</Text>
-                </Pressable>
-                <Pressable style={({ pressed }) => [styles.socialBtn, pressed && styles.socialPressed]}>
-                  <MaterialIcons name="terminal" size={20} color={colors.onSurface} />
-                  <Text style={styles.socialLabel}>GitHub</Text>
                 </Pressable>
               </View>
                 </>
@@ -504,51 +484,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#ffd2cc',
     lineHeight: 18,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: spacing.lg,
-    gap: spacing.md,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: `${colors.outlineVariant}4D`,
-  },
-  dividerText: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 14,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    color: colors.outlineVariant,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  socialBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: `${colors.outlineVariant}4D`,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  socialPressed: {
-    backgroundColor: `${colors.surfaceVariant}80`,
-  },
-  socialIcon: {
-    width: 20,
-    height: 20,
-  },
-  socialLabel: {
-    fontFamily: 'Poppins_600SemiBold',
-    fontSize: 14,
-    color: colors.onSurface,
   },
   footer: {
     marginTop: spacing.lg,

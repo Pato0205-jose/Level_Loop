@@ -135,11 +135,13 @@ function AppInner() {
 
   const maybeShowStreakGreeting = useCallback(
     async (userId: string, currentProgress: UserProgress | null) => {
-      if (!currentProgress) return;
       const due = await shouldShowStreakGreeting(userId);
       if (!due) return;
-      setStreakGreeting(currentProgress.streakDays);
-      await markStreakGreetedToday(userId);
+
+      const p = currentProgress ?? (await getProgress(userId));
+      if (!p) return;
+
+      setStreakGreeting(p.streakDays);
       feedback('streak');
     },
     [],
@@ -151,7 +153,6 @@ function AppInner() {
       if (onboarded) {
         setMainTab('missions');
         setScreen('main');
-        void maybeShowStreakGreeting(currentUser.id, progress);
         void initStreakReminders();
       } else {
         setScreen('onboarding');
@@ -159,20 +160,29 @@ function AppInner() {
     } else {
       setScreen('welcome');
     }
-  }, [currentUser, progress, maybeShowStreakGreeting]);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!hydrated || !homeFinished) return;
     void advanceFromHome();
   }, [hydrated, homeFinished, advanceFromHome]);
 
+  useEffect(() => {
+    if (screen !== 'main' || !currentUser || streakGreeting !== null) return;
+    void maybeShowStreakGreeting(currentUser.id, progress);
+  }, [screen, currentUser, progress, streakGreeting, maybeShowStreakGreeting]);
+
   const handleHomeFinish = useCallback(() => {
     setHomeFinished(true);
   }, []);
 
   const dismissStreakGreeting = useCallback(() => {
+    const userId = currentUser?.id;
     setStreakGreeting(null);
-  }, []);
+    if (userId) {
+      void markStreakGreetedToday(userId);
+    }
+  }, [currentUser]);
 
   const enterApp = useCallback(() => {
     setMainTab('missions');
@@ -200,10 +210,9 @@ function AppInner() {
       );
       void getProgress(user.id).then((p) => {
         setProgress(p);
-        void maybeShowStreakGreeting(user.id, p);
       });
     },
-    [enterApp, maybeShowStreakGreeting],
+    [enterApp],
   );
 
   const handleRegisterSuccess = useCallback(
